@@ -4,6 +4,26 @@ Changelog
 0.9
 ---
 
+Version 0.9.47
+^^^^^^^^^^^^^^
+
+* ``ibapi`` package from IB is no longer needed, ib_insync handles its own
+  socket protocol encoding and decoding now.
+* Documentation moved to `readthedocs <https://ib-insync.readthedocs.io>`_ as
+  rawgit will cease operation later this year.
+* Blocking requests will now raise ``ConnectionError`` on a connection failure.
+  This also goes for ``util.run``, ``util.timeRange``, etc.
+
+Version 0.9.46
+^^^^^^^^^^^^^^
+
+* ``Event`` class has been replaced with the one from
+  `eventkit <https://github.com/erdewit/eventkit>`_.
+* Event-driven bar construction from ticks added (via ``Ticker.updateEvent``)
+* Fixed bug #136.
+* Default request throttling is now 45 requests/s for compatibility with
+  TWS/gateway 974 and higher.
+
 Version 0.9.45
 ^^^^^^^^^^^^^^
 

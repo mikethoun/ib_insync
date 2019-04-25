@@ -7,7 +7,17 @@ import asyncio
 import time
 from typing import Iterator, AsyncIterator, Callable, Union
 
-from ib_insync.objects import Object, DynamicObject
+import eventkit as ev
+
+
+globalErrorEvent = ev.Event()
+"""
+Event to emit global exceptions.
+"""
+
+
+UNSET_INTEGER = 2 ** 31 - 1
+UNSET_DOUBLE = sys.float_info.max
 
 
 def df(objs, labels=None):
@@ -17,6 +27,7 @@ def df(objs, labels=None):
     drop the rest.
     """
     import pandas as pd
+    from .objects import Object, DynamicObject
     if objs:
         objs = list(objs)
         obj = objs[0]
@@ -43,6 +54,7 @@ def tree(obj):
     Convert object to a tree of lists, dicts and simple values.
     The result can be serialized to JSON.
     """
+    from .objects import Object
     if isinstance(obj, (bool, int, float, str, bytes)):
         return obj
     elif isinstance(obj, (datetime.date, datetime.time)):
@@ -120,7 +132,7 @@ def allowCtrlC():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 
-def logToFile(path, level=logging.INFO, ibapiLevel=logging.ERROR):
+def logToFile(path, level=logging.INFO):
     """
     Create a log handler that logs to the given file.
     """
@@ -131,10 +143,9 @@ def logToFile(path, level=logging.INFO, ibapiLevel=logging.ERROR):
     handler = logging.FileHandler(path)
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-    logging.getLogger('ibapi').setLevel(ibapiLevel)
 
 
-def logToConsole(level=logging.INFO, ibapiLevel=logging.ERROR):
+def logToConsole(level=logging.INFO):
     """
     Create a log handler that logs to the console.
     """
@@ -148,20 +159,6 @@ def logToConsole(level=logging.INFO, ibapiLevel=logging.ERROR):
         h for h in logger.handlers
         if type(h) is not logging.StreamHandler]
     logger.addHandler(handler)
-    logging.getLogger('ibapi').setLevel(ibapiLevel)
-
-
-def ibapiVersionInfo() -> tuple:
-    """
-    Version info of ibapi module as 3-tuple.
-    """
-    import ibapi
-    import ibapi.wrapper
-    version = tuple(int(i) for i in ibapi.__version__.split('.'))
-    if version == (9, 73, 7) and hasattr(ibapi.wrapper.EWrapper, 'orderBound'):
-        # IB forgot to set the friggin version info again
-        version = (9, 74, 0)
-    return version
 
 
 def isNan(x: float) -> bool:
@@ -244,7 +241,19 @@ def run(*awaitables, timeout: float = None):
             future = asyncio.gather(*awaitables)
         if timeout:
             future = asyncio.wait_for(future, timeout)
-        result = loop.run_until_complete(future)
+        task = asyncio.ensure_future(future)
+
+        def onError(_):
+            task.cancel()
+
+        globalErrorEvent.connect(onError)
+        try:
+            result = loop.run_until_complete(task)
+        except asyncio.CancelledError as e:
+            raise globalErrorEvent.value() or e
+        finally:
+            globalErrorEvent.disconnect(onError)
+
     return result
 
 
